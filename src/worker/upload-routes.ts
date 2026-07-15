@@ -74,6 +74,12 @@ export const uploadRoutes = new Hono<{ Bindings: Env }>();
 
 uploadRoutes.use("*", requireAdmin());
 
+uploadRoutes.get("/files/:id", async (context) => {
+  const file = await new FileRepository(context.env.DB).findById(context.req.param("id"));
+  if (!file || file.state !== "finalized") return context.json({ error: "File not found" }, 404);
+  return context.json(fileDto(file));
+});
+
 uploadRoutes.post("/uploads/authorize", requireCsrf(), async (context) => {
   const parsed = uploadRequestSchema.safeParse(await context.req.json().catch(() => null));
   if (!parsed.success) return context.json({ error: "Invalid file", issues: parsed.error.flatten().fieldErrors }, 400);

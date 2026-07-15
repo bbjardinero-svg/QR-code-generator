@@ -3,7 +3,7 @@ import type { Env } from "./env";
 
 export const securityHeaders = (): MiddlewareHandler<{ Bindings: Env }> => async (context, next) => {
   await next();
-  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; style-src-attr 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
   context.header("X-Content-Type-Options", "nosniff");
   context.header("Referrer-Policy", "no-referrer");
   context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");

@@ -4,6 +4,7 @@ import { QR_COLORS } from "../shared/constants";
 import { createQrInputSchema, httpsUrlSchema } from "../shared/schemas";
 import { requireAdmin, requireCsrf } from "./auth";
 import type { Env } from "./env";
+import { FileRepository } from "./file-repository";
 import { QrRepository, type QrRecord, type QrStatus, type QrWithScans } from "./qr-repository";
 import { renderQrPng, renderQrSvg } from "./qr-renderer";
 
@@ -112,8 +113,28 @@ qrRoutes.post("/qr/:id/archive", requireCsrf(), (context) => changeStatus(contex
 qrRoutes.post("/qr/:id/restore", requireCsrf(), (context) => changeStatus(context, "active"));
 
 qrRoutes.delete("/qr/:id", requireCsrf(), async (context) => {
-  const removed = await new QrRepository(context.env.DB).remove(context.req.param("id"));
-  return removed ? context.body(null, 204) : context.json({ error: "QR code not found" }, 404);
+  const repository = new QrRepository(context.env.DB);
+  const qr = await repository.findById(context.req.param("id"));
+  if (!qr) return context.json({ error: "QR code not found" }, 404);
+  const fileRepository = new FileRepository(context.env.DB);
+  const file = qr.storedFileId ? await fileRepository.findById(qr.storedFileId) : null;
+  const removed = await repository.remove(qr.id);
+  if (!removed) return context.json({ error: "QR code was not deleted" }, 409);
+
+  if (file) {
+    const references = await context.env.DB.prepare("SELECT COUNT(*) AS count FROM qr_codes WHERE stored_file_id = ?1")
+      .bind(file.id)
+      .first<{ count: number }>();
+    if (Number(references?.count ?? 0) === 0) {
+      try {
+        await context.env.FILES.delete(file.r2Key);
+        await fileRepository.remove(file.id);
+      } catch (error) {
+        console.error("Unable to remove an unreferenced QR file", { storedFileId: file.id, error });
+      }
+    }
+  }
+  return context.body(null, 204);
 });
 
 qrRoutes.get("/qr/:id/png", async (context) => {

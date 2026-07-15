@@ -247,4 +247,35 @@ describe("private R2 upload lifecycle", () => {
     expect(await new FileRepository(env.DB).findById(file.id)).not.toBeNull();
     expect(await env.FILES.head(record!.r2Key)).not.toBeNull();
   });
+
+  it("returns file metadata to the admin and permanently deletes an unshared QR file", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const authorization = (await authorize("delete-me.pdf", "application/pdf", bytes.byteLength)).authorization!;
+    await putAuthorizedObject(authorization, bytes);
+    const finalized = (await finalize(authorization.uploadId)).file!;
+    const fileRecord = await new FileRepository(env.DB).findById(finalized.id);
+    const qr = await new QrRepository(env.DB).create({
+      id: crypto.randomUUID(),
+      slug: "delete-file-qr",
+      name: "Delete file QR",
+      description: null,
+      contentType: "file",
+      destinationUrl: null,
+      storedFileId: finalized.id,
+      foregroundColor: "#102f29",
+      now: new Date().toISOString(),
+    });
+
+    const metadata = await SELF.fetch(`https://example.test/api/files/${finalized.id}`, { headers: { cookie: admin.cookie } });
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({ originalName: "delete-me.pdf", sizeBytes: 4 });
+
+    const deleted = await SELF.fetch(`https://example.test/api/qr/${qr.id}`, {
+      method: "DELETE",
+      headers: headers(false),
+    });
+    expect(deleted.status).toBe(204);
+    expect(await env.FILES.head(fileRecord!.r2Key)).toBeNull();
+    expect(await new FileRepository(env.DB).findById(finalized.id)).toBeNull();
+  });
 });
