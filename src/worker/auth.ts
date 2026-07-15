@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import type { MiddlewareHandler } from "hono";
 import type { Env } from "./env";
 import { constantTimeEqual, hasTrustedOrigin } from "./security";
 
@@ -37,7 +38,7 @@ interface VerifiedSession {
   csrfToken: string;
 }
 
-async function verifySession(db: D1Database, secret: string, cookie: string | undefined): Promise<VerifiedSession | null> {
+export async function verifySession(db: D1Database, secret: string, cookie: string | undefined): Promise<VerifiedSession | null> {
   if (!cookie) return null;
   const [id, csrfToken, signature, extra] = cookie.split(".");
   if (!id || !csrfToken || !signature || extra) return null;
@@ -53,18 +54,48 @@ async function verifySession(db: D1Database, secret: string, cookie: string | un
   return { id, csrfToken };
 }
 
+export const requireAdmin = (): MiddlewareHandler<{ Bindings: Env }> => async (context, next) => {
+  const session = await verifySession(context.env.DB, context.env.SESSION_SECRET, getCookie(context, COOKIE_NAME));
+  if (!session) return context.json({ error: "Unauthorized" }, 401);
+  await next();
+};
+
+async function loginBucket(context: { req: { header(name: string): string | undefined }; env: Env }): Promise<string> {
+  return sha256(`${context.req.header("cf-connecting-ip") ?? "unknown"}:${context.env.SESSION_SECRET}`);
+}
+
 export const authRoutes = new Hono<{ Bindings: Env }>();
 
 authRoutes.post("/login", async (context) => {
   if (!hasTrustedOrigin(context.req.raw, context.env.APP_ORIGIN)) return context.json({ error: "Forbidden" }, 403);
+  const bucket = await loginBucket(context);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+  const attempts = await context.env.DB.prepare(
+    "SELECT failures, window_started_at FROM login_attempts WHERE bucket_hash = ?1",
+  )
+    .bind(bucket)
+    .first<{ failures: number; window_started_at: string }>();
+  if (attempts && attempts.window_started_at >= windowStart && attempts.failures >= 5) {
+    return context.json({ error: "Too many attempts" }, 429);
+  }
   const body: { passphrase?: string } = await context.req.json<{ passphrase?: string }>().catch(() => ({}));
   if (!body.passphrase || !constantTimeEqual(body.passphrase, context.env.ADMIN_PASSPHRASE)) {
+    const failures = attempts && attempts.window_started_at >= windowStart ? attempts.failures + 1 : 1;
+    const startedAt = attempts && attempts.window_started_at >= windowStart ? attempts.window_started_at : now.toISOString();
+    await context.env.DB.prepare(
+      `INSERT INTO login_attempts (bucket_hash, window_started_at, failures) VALUES (?1, ?2, ?3)
+       ON CONFLICT(bucket_hash) DO UPDATE SET window_started_at = excluded.window_started_at, failures = excluded.failures`,
+    )
+      .bind(bucket, startedAt, failures)
+      .run();
     return context.json({ error: "Invalid credentials" }, 401);
   }
 
+  await context.env.DB.prepare("DELETE FROM login_attempts WHERE bucket_hash = ?1").bind(bucket).run();
+
   const id = randomToken();
   const csrfToken = randomToken();
-  const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_SECONDS * 1000);
   await context.env.DB.prepare(
     "INSERT INTO sessions (id_hash, csrf_hash, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",

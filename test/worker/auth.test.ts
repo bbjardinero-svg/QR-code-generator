@@ -27,6 +27,24 @@ describe("single-admin authentication", () => {
     expect(await response.json()).toEqual({ error: "Invalid credentials" });
   });
 
+  it("throttles repeated failed login attempts without storing the raw address", async () => {
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      response = await SELF.fetch("https://example.test/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://example.test",
+          "cf-connecting-ip": "192.0.2.55",
+        },
+        body: JSON.stringify({ passphrase: "wrong" }),
+      });
+    }
+
+    expect(response?.status).toBe(429);
+    expect(await response?.json()).toEqual({ error: "Too many attempts" });
+  });
+
   it("resolves and deletes an authenticated session", async () => {
     const login = await SELF.fetch("https://example.test/api/auth/login", {
       method: "POST",
