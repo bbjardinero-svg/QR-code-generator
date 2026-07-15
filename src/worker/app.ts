@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { authRoutes } from "./auth";
 import type { Env } from "./env";
+import { publicRoutes } from "./public-routes";
 import { qrRoutes } from "./qr-routes";
 import { scheduled } from "./scheduled";
 import { securityHeaders } from "./security";
@@ -14,6 +15,7 @@ export const createApp = () => {
   app.route("/api/auth", authRoutes);
   app.route("/api", qrRoutes);
   app.route("/api", uploadRoutes);
+  app.route("/", publicRoutes);
   app.notFound((context) => context.text("Not found", 404));
 
   return app;
