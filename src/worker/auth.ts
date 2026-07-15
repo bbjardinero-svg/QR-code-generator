@@ -60,6 +60,17 @@ export const requireAdmin = (): MiddlewareHandler<{ Bindings: Env }> => async (c
   await next();
 };
 
+export const requireCsrf = (): MiddlewareHandler<{ Bindings: Env }> => async (context, next) => {
+  if (!hasTrustedOrigin(context.req.raw, context.env.APP_ORIGIN)) {
+    return context.json({ error: "Forbidden" }, 403);
+  }
+  const session = await verifySession(context.env.DB, context.env.SESSION_SECRET, getCookie(context, COOKIE_NAME));
+  if (!session || !constantTimeEqual(context.req.header("x-csrf-token") ?? "", session.csrfToken)) {
+    return context.json({ error: "Forbidden" }, 403);
+  }
+  await next();
+};
+
 async function loginBucket(context: { req: { header(name: string): string | undefined }; env: Env }): Promise<string> {
   return sha256(`${context.req.header("cf-connecting-ip") ?? "unknown"}:${context.env.SESSION_SECRET}`);
 }
