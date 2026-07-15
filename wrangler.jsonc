@@ -21,6 +21,7 @@
     "crons": ["17 3 * * *"]
   },
   "vars": {
-    "APP_ORIGIN": "https://example.test"
+    "APP_ORIGIN": "https://example.test",
+    "R2_BUCKET_NAME": "everqr-files"
   }
 }
