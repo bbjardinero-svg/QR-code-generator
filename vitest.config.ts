@@ -9,6 +9,9 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
+          ADMIN_PASSPHRASE: "test-passphrase",
+          SESSION_SECRET: "test-session-secret-with-at-least-32-characters",
+          APP_ORIGIN: "https://example.test",
         },
       },
     })),
