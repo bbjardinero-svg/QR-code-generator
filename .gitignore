@@ -3,5 +3,9 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+.dev.vars.*
+!.dev.vars.example
+r2-cors.json
 playwright-report/
 test-results/
+output/playwright/

@@ -1,0 +1,7 @@
+ADMIN_PASSPHRASE="local-test-passphrase"
+SESSION_SECRET="local-test-session-secret-change-this-before-sharing"
+APP_ORIGIN="http://localhost:8787"
+R2_ACCOUNT_ID="local-placeholder"
+R2_BUCKET_NAME="everqr-files-local"
+R2_ACCESS_KEY_ID="local-placeholder"
+R2_SECRET_ACCESS_KEY="local-placeholder"

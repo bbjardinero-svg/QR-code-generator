@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
+  ASSETS: Fetcher;
   ADMIN_PASSPHRASE: string;
   SESSION_SECRET: string;
   R2_ACCOUNT_ID: string;

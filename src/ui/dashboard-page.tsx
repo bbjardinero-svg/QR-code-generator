@@ -55,7 +55,11 @@ export function DashboardPage({ api, onCreate, onOpenQr, onSignOut }: DashboardP
           <h1>Your QR registry</h1>
           <p>Stable public routes, current destinations, and scan activity in one place.</p>
         </div>
-        <button className="button button--primary" type="button" onClick={onCreate}>Create QR code</button>
+        <div className="page-header__actions">
+          <a className="button button--secondary" href="/api/export.csv" download>Export CSV</a>
+          <a className="button button--secondary" href="/api/export.json" download>Export JSON</a>
+          <button className="button button--primary" type="button" onClick={onCreate}>Create QR code</button>
+        </div>
       </header>
 
       {error ? (

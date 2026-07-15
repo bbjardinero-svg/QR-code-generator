@@ -443,6 +443,12 @@ h3,
   line-height: 1.6;
 }
 
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ledger {
   display: grid;
   max-width: 1450px;
@@ -1760,6 +1766,11 @@ h3,
     align-items: stretch;
     flex-direction: column;
     gap: 22px;
+  }
+
+  .page-header__actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .page-header h1 {

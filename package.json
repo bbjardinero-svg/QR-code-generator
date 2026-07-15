@@ -6,7 +6,10 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite dev",
+    "e2e:server": "pnpm build && wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state --env-file .dev.vars.example && wrangler dev --local --persist-to .wrangler/e2e-state --port 8787 --env-file .dev.vars.example --log-level warn",
     "test": "WRANGLER_LOG_PATH=.wrangler/wrangler-test.log vitest run",
+    "test:e2e": "playwright test",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
