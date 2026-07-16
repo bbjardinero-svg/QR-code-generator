@@ -184,37 +184,35 @@ export class ApiClient implements DashboardApi, DetailApi {
   }
 
   async uploadFile(file: File, onProgress: (percent: number) => void): Promise<StoredFileDto> {
-    const authorization = await this.request<{
-      uploadId: string;
-      uploadUrl: string;
-      uploadHeaders: Record<string, string>;
-    }>("/api/uploads/authorize", {
-      method: "POST",
-      body: JSON.stringify({ fileName: file.name, mediaType: file.type, sizeBytes: file.size }),
-    });
-
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<StoredFileDto>((resolve, reject) => {
       const upload = new XMLHttpRequest();
-      upload.open("PUT", authorization.uploadUrl);
-      Object.entries(authorization.uploadHeaders).forEach(([name, value]) => upload.setRequestHeader(name, value));
+      upload.open("POST", "/api/uploads/direct");
+      upload.setRequestHeader("content-type", file.type);
+      upload.setRequestHeader("x-everqr-file-name", encodeURIComponent(file.name));
+      upload.setRequestHeader("x-everqr-file-size", String(file.size));
+      if (this.csrfToken) upload.setRequestHeader("x-csrf-token", this.csrfToken);
       upload.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
       });
       upload.addEventListener("load", () => {
-        if (upload.status >= 200 && upload.status < 300) {
+        const body = (() => {
+          try {
+            return JSON.parse(upload.responseText) as StoredFileDto | { error?: string };
+          } catch {
+            return null;
+          }
+        })();
+        if (upload.status >= 200 && upload.status < 300 && body) {
           onProgress(100);
-          resolve();
+          resolve(body as StoredFileDto);
         } else {
-          reject(new ApiError("Direct R2 upload failed", upload.status));
+          const message = body && "error" in body && body.error ? body.error : "Direct R2 upload failed";
+          reject(new ApiError(message, upload.status, body));
         }
       });
       upload.addEventListener("error", () => reject(new ApiError("Direct R2 upload failed", 0)));
       upload.addEventListener("abort", () => reject(new ApiError("Direct R2 upload was cancelled", 0)));
       upload.send(file);
-    });
-
-    return this.request<StoredFileDto>(`/api/uploads/${encodeURIComponent(authorization.uploadId)}/finalize`, {
-      method: "POST",
     });
   }
 }
