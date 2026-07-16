@@ -1,5 +1,5 @@
 import { AwsClient } from "aws4fetch";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { UPLOAD_AUTHORIZATION_SECONDS } from "../shared/constants";
 import { uploadRequestSchema } from "../shared/schemas";
@@ -40,6 +40,20 @@ function metadataMatches(object: R2Object, record: StoredFileRecord): boolean {
   );
 }
 
+function directUploadInput(context: Context<{ Bindings: Env }>) {
+  let fileName = "";
+  try {
+    fileName = decodeURIComponent(context.req.header("x-everqr-file-name") ?? "");
+  } catch {
+    fileName = "";
+  }
+  return {
+    fileName,
+    mediaType: (context.req.header("content-type") ?? "").split(";", 1)[0].trim().toLowerCase(),
+    sizeBytes: Number(context.req.header("x-everqr-file-size")),
+  };
+}
+
 async function presignUpload(env: Env, record: StoredFileRecord): Promise<{ uploadUrl: string; uploadHeaders: Record<string, string> }> {
   const url = new URL(
     `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${encodeURIComponent(env.R2_BUCKET_NAME)}/${record.r2Key}`,
@@ -47,7 +61,6 @@ async function presignUpload(env: Env, record: StoredFileRecord): Promise<{ uplo
   url.searchParams.set("X-Amz-Expires", String(UPLOAD_AUTHORIZATION_SECONDS));
   const metadata = uploadMetadata(record);
   const signingHeaders = {
-    "content-length": String(record.sizeBytes),
     "content-type": record.mediaType,
     "x-amz-meta-upload-id": metadata["upload-id"],
     "x-amz-meta-size-bytes": metadata["size-bytes"],
@@ -65,9 +78,7 @@ async function presignUpload(env: Env, record: StoredFileRecord): Promise<{ uplo
     headers: signingHeaders,
     aws: { signQuery: true, allHeaders: true, service: "s3", region: "auto" },
   });
-  const uploadHeaders = { ...signingHeaders };
-  delete (uploadHeaders as Partial<typeof signingHeaders>)["content-length"];
-  return { uploadUrl: signed.url, uploadHeaders };
+  return { uploadUrl: signed.url, uploadHeaders: signingHeaders };
 }
 
 export const uploadRoutes = new Hono<{ Bindings: Env }>();
@@ -78,6 +89,50 @@ uploadRoutes.get("/files/:id", async (context) => {
   const file = await new FileRepository(context.env.DB).findById(context.req.param("id"));
   if (!file || file.state !== "finalized") return context.json({ error: "File not found" }, 404);
   return context.json(fileDto(file));
+});
+
+uploadRoutes.post("/uploads/direct", requireCsrf(), async (context) => {
+  const parsed = uploadRequestSchema.safeParse(directUploadInput(context));
+  if (!parsed.success || !context.req.raw.body) {
+    return context.json(
+      { error: "Invalid file", issues: parsed.success ? undefined : parsed.error.flatten().fieldErrors },
+      400,
+    );
+  }
+
+  const repository = new FileRepository(context.env.DB);
+  const record = await repository.createTemporary({
+    id: crypto.randomUUID(),
+    r2Key: `files/${crypto.randomUUID()}`,
+    originalName: parsed.data.fileName,
+    mediaType: parsed.data.mediaType.toLowerCase(),
+    sizeBytes: parsed.data.sizeBytes,
+    createdAt: new Date().toISOString(),
+  });
+
+  try {
+    const stored = await context.env.FILES.put(record.r2Key, context.req.raw.body, {
+      httpMetadata: { contentType: record.mediaType },
+      customMetadata: uploadMetadata(record),
+    });
+    if (!metadataMatches(stored, record)) {
+      await context.env.FILES.delete(record.r2Key);
+      await repository.remove(record.id);
+      return context.json({ error: "Stored object does not match the upload" }, 409);
+    }
+    const finalized = await repository.finalize(record.id, record.r2Key, stored.etag);
+    if (!finalized) {
+      await context.env.FILES.delete(record.r2Key);
+      await repository.remove(record.id);
+      return context.json({ error: "Upload state changed; retry upload" }, 409);
+    }
+    return context.json(fileDto(finalized), 201);
+  } catch (error) {
+    await context.env.FILES.delete(record.r2Key).catch(() => undefined);
+    await repository.remove(record.id).catch(() => undefined);
+    console.error("Unable to store direct R2 upload", error);
+    return context.json({ error: "Unable to store upload" }, 503);
+  }
 });
 
 uploadRoutes.post("/uploads/authorize", requireCsrf(), async (context) => {

@@ -83,6 +83,25 @@ async function finalize(uploadId: string): Promise<{ response: Response; file?: 
   return { response, file: response.ok ? await response.json<StoredFileDto>() : undefined };
 }
 
+async function directUpload(
+  fileName: string,
+  mediaType: string,
+  bytes: Uint8Array,
+  declaredSize = bytes.byteLength,
+): Promise<{ response: Response; file?: StoredFileDto }> {
+  const response = await SELF.fetch("https://example.test/api/uploads/direct", {
+    method: "POST",
+    headers: {
+      ...headers(false),
+      "content-type": mediaType,
+      "x-everqr-file-name": encodeURIComponent(fileName),
+      "x-everqr-file-size": String(declaredSize),
+    },
+    body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  });
+  return { response, file: response.ok ? await response.json<StoredFileDto>() : undefined };
+}
+
 beforeAll(async () => {
   admin = await login();
 });
@@ -98,6 +117,7 @@ describe("private R2 upload lifecycle", () => {
     expect(url.pathname).toBe(`/everqr-files-test/${authorization!.objectKey}`);
     expect(authorization!.objectKey).toMatch(/^temporary\/[0-9a-f-]+$/);
     expect(url.searchParams.get("X-Amz-Expires")).toBe("600");
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).not.toContain("content-length");
     expect(url.searchParams.get("X-Amz-SignedHeaders")).toContain("content-type");
     expect(url.searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-meta-size-bytes");
     expect(authorization!.uploadHeaders).toMatchObject({
@@ -125,6 +145,56 @@ describe("private R2 upload lifecycle", () => {
       body: JSON.stringify({ fileName: "safe.pdf", mediaType: "application/pdf", sizeBytes: 10 }),
     });
     expect(crossOrigin.status).toBe(403);
+  });
+
+  it("streams a validated upload through the Worker and finalizes it", async () => {
+    const bytes = new Uint8Array([37, 80, 68, 70]);
+    const uploaded = await directUpload("direct.pdf", "application/pdf", bytes);
+    expect(uploaded.response.status).toBe(201);
+    expect(uploaded.file).toMatchObject({
+      originalName: "direct.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: 4,
+      etag: expect.any(String),
+    });
+
+    const record = await new FileRepository(env.DB).findById(uploaded.file!.id);
+    expect(record).toMatchObject({ state: "finalized", mediaType: "application/pdf", sizeBytes: 4 });
+    expect(record!.r2Key).toMatch(/^files\/[0-9a-f-]+$/);
+    const object = await env.FILES.head(record!.r2Key);
+    expect(object).toMatchObject({ size: 4, httpMetadata: { contentType: "application/pdf" } });
+  });
+
+  it("rejects invalid direct uploads and removes size-mismatched objects", async () => {
+    expect(
+      (await directUpload("too-large.pdf", "application/pdf", new Uint8Array([1]), 100_000_001)).response.status,
+    ).toBe(400);
+    expect(
+      (await directUpload("malware.exe", "application/octet-stream", new Uint8Array([1]))).response.status,
+    ).toBe(400);
+
+    const mismatched = await directUpload("mismatch.pdf", "application/pdf", new Uint8Array([1, 2, 3]), 4);
+    expect(mismatched.response.status).toBe(409);
+    const rows = await env.DB.prepare("SELECT id, r2_key FROM stored_files WHERE original_name = ?1")
+      .bind("mismatch.pdf")
+      .all();
+    expect(rows.results).toHaveLength(0);
+  });
+
+  it("protects direct uploads with the existing admin and CSRF checks", async () => {
+    const response = await SELF.fetch("https://example.test/api/uploads/direct", {
+      method: "POST",
+      headers: {
+        cookie: admin.cookie,
+        origin: "https://attacker.example",
+        "x-csrf-token": admin.csrfToken,
+        "content-type": "text/plain",
+        "x-everqr-file-name": "safe.txt",
+        "x-everqr-file-size": "4",
+      },
+      body: "safe",
+    });
+    expect(response.status).toBe(403);
   });
 
   it("refuses to publish or finalize an upload until its R2 object matches", async () => {
