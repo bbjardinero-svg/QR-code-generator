@@ -13,21 +13,21 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "everqr-local",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_name": "everqr",
+      "database_id": "c289e748-ce3b-4a51-97fa-588f5def9209"
     }
   ],
   "r2_buckets": [
     {
       "binding": "FILES",
-      "bucket_name": "everqr-files-local"
+      "bucket_name": "everqr-files"
     }
   ],
   "triggers": {
     "crons": ["17 3 * * *"]
   },
   "vars": {
-    "APP_ORIGIN": "https://example.test",
+    "APP_ORIGIN": "https://everqr.bbjardinero-svg.workers.dev",
     "R2_BUCKET_NAME": "everqr-files"
   }
 }
