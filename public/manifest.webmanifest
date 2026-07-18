@@ -1,0 +1,9 @@
+{
+  "name": "EverQR",
+  "short_name": "EverQR",
+  "description": "A private dashboard for durable QR routes, links, files, and scan counts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f4ed",
+  "theme_color": "#123c35"
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "everqr",
+  "main": "src/worker/app.ts",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/r/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "everqr",
+      "database_id": "c289e748-ce3b-4a51-97fa-588f5def9209"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "everqr-files"
+    }
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  },
+  "vars": {
+    "APP_ORIGIN": "https://everqr.bbjardinero-svg.workers.dev",
+    "R2_BUCKET_NAME": "everqr-files"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://everqr.YOUR-WORKERS-SUBDOMAIN.workers.dev"],
+        "methods": ["PUT"],
+        "headers": [
+          "content-type",
+          "x-amz-meta-upload-id",
+          "x-amz-meta-size-bytes",
+          "x-amz-meta-original-name"
+        ]
+      },
+      "exposeHeaders": ["etag"],
+      "maxAgeSeconds": 600
+    }
+  ]
+}
